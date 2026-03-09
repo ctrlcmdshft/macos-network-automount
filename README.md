@@ -2,7 +2,7 @@
 
 Automatically mount an SMB share on macOS when you join a specific Wi-Fi network, and unmount it when you leave.
 
-Current build: `0.1.0-beta.1`
+Current build: `0.1.0-beta.2`
 
 ## What It Does
 
@@ -14,13 +14,19 @@ This project installs a per-user LaunchAgent that watches macOS network configur
 4. Mounts the configured SMB share if it matches.
 5. Unmounts the share if it does not.
 
-The share is mounted under:
+For `nsmb` and `system` auth modes, the share is mounted under:
 
 ```bash
 ~/Library/Caches/NetworkAutoMount/mounts/<share-name>
 ```
 
-By default the share is mounted with `nobrowse,automounted`, which keeps it out of the usual Finder browsing flow. You can now make that optional during setup.
+By default those modes mount with `nobrowse,automounted`, which keeps the share out of the usual Finder browsing flow. You can make that optional during setup.
+
+For `interactive` auth mode, the script uses Finder's normal SMB mount flow so macOS can show the login prompt. In that mode the share usually mounts under:
+
+```bash
+/Volumes/<share-name>
+```
 
 ## Files
 
@@ -68,12 +74,14 @@ The generated config includes:
 
 ## Auth Modes
 
-There are two supported auth modes:
+There are three supported auth modes:
 
 1. `nsmb`
    Stores credentials in `~/Library/Preferences/nsmb.conf` so the LaunchAgent can mount the share unattended. This is plain-text storage protected by file permissions, not Keychain.
 2. `system`
    Does not store credentials. This only works if macOS already has a usable SMB session or the share can be mounted without a password prompt.
+3. `interactive`
+   Uses Finder's standard SMB mount flow so macOS can prompt for username and password when needed. This mode is GUI-driven and the share will appear in Finder.
 
 If you want unattended background mounts, use `nsmb`.
 
@@ -84,7 +92,9 @@ If you want unattended background mounts, use `nsmb`.
 - `false`: mount with `nobrowse,automounted`
 - `true`: mount with `automounted`
 
-If you need something more specific, you can still override `MOUNT_OPTIONS` directly in `~/Library/Application Support/NetworkAutoMount/config.sh`. When `MOUNT_OPTIONS` is set manually, that value takes precedence over the derived Finder visibility setting.
+This setting applies to `nsmb` and `system` auth modes. `interactive` always uses Finder's normal mount flow and appears in Finder.
+
+If you need something more specific, you can still override `MOUNT_OPTIONS` directly in `~/Library/Application Support/NetworkAutoMount/config.sh`. When `MOUNT_OPTIONS` is set manually, that value takes precedence over the derived Finder visibility setting for non-interactive auth modes.
 
 ## Usage
 

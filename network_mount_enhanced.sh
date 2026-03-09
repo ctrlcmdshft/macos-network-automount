@@ -31,6 +31,9 @@ load_config() {
     AUTH_MODE="${AUTH_MODE:-system}"
     SHOW_IN_FINDER="${SHOW_IN_FINDER:-false}"
     MOUNT_NAME="${MOUNT_NAME:-$(printf '%s' "$SHARE_PATH" | tr '/:' '__')}"
+    if [ "$AUTH_MODE" = "interactive" ]; then
+        SHOW_IN_FINDER="true"
+    fi
     MOUNT_OPTIONS="${MOUNT_OPTIONS:-$(build_mount_options)}"
 
     : "${TARGET_NETWORK:?Missing TARGET_NETWORK in $CONFIG_FILE}"
@@ -74,33 +77,56 @@ get_mount_path() {
     printf '%s/%s' "$MOUNT_ROOT" "$MOUNT_NAME"
 }
 
-is_mounted() {
-    local mount_path
+get_interactive_mount_path() {
+    printf '/Volumes/%s' "$SHARE_PATH"
+}
 
-    mount_path="$(get_mount_path)"
-    /sbin/mount | awk -v target="$mount_path" '$3 == target { found = 1 } END { exit found ? 0 : 1 }'
+is_path_mounted() {
+    local target_path="$1"
+
+    /sbin/mount | grep -Fq " on $target_path ("
+}
+
+is_mounted() {
+    if [ "$AUTH_MODE" = "interactive" ]; then
+        is_path_mounted "$(get_interactive_mount_path)"
+    else
+        is_path_mounted "$(get_mount_path)"
+    fi
 }
 
 mount_share() {
-    local mount_path mount_url rc
+    local mount_path mount_url rc finder_url
 
-    mount_path="$(get_mount_path)"
     mount_url="//$USERNAME@$SHARE_SERVER/$SHARE_PATH"
 
     if is_mounted; then
-        log_message "Share already mounted at $mount_path"
+        log_message "Share already mounted"
         return 0
     fi
 
-    mkdir -p "$mount_path"
-    log_message "Attempting mount for //$USERNAME@$SHARE_SERVER/$SHARE_PATH at $mount_path"
-
     case "$AUTH_MODE" in
         nsmb)
+            mount_path="$(get_mount_path)"
+            mkdir -p "$mount_path"
+            log_message "Attempting mount for //$USERNAME@$SHARE_SERVER/$SHARE_PATH at $mount_path"
             /sbin/mount -t smbfs -N -o "$MOUNT_OPTIONS" "$mount_url" "$mount_path" >> "$LOG_FILE" 2>&1
             ;;
         system)
+            mount_path="$(get_mount_path)"
+            mkdir -p "$mount_path"
+            log_message "Attempting mount for //$USERNAME@$SHARE_SERVER/$SHARE_PATH at $mount_path"
             /sbin/mount -t smbfs -o "$MOUNT_OPTIONS,nopassprompt" "$mount_url" "$mount_path" >> "$LOG_FILE" 2>&1
+            ;;
+        interactive)
+            mount_path="$(get_interactive_mount_path)"
+            finder_url="smb://$USERNAME@$SHARE_SERVER/$SHARE_PATH"
+            log_message "Attempting interactive Finder mount for $finder_url"
+            /usr/bin/osascript \
+                -e 'on run argv' \
+                -e 'mount volume (item 1 of argv)' \
+                -e 'end run' \
+                "$finder_url" >> "$LOG_FILE" 2>&1
             ;;
         *)
             log_message "Unknown AUTH_MODE '$AUTH_MODE'"
@@ -115,14 +141,21 @@ mount_share() {
     fi
 
     log_message "Failed to mount share (exit code $rc)"
-    rmdir "$mount_path" 2>/dev/null || true
+    if [ "$AUTH_MODE" != "interactive" ]; then
+        rmdir "$mount_path" 2>/dev/null || true
+    fi
     return "$rc"
 }
 
 unmount_share() {
     local mount_path rc
 
-    mount_path="$(get_mount_path)"
+    if [ "$AUTH_MODE" = "interactive" ]; then
+        mount_path="$(get_interactive_mount_path)"
+    else
+        mount_path="$(get_mount_path)"
+    fi
+
     if ! is_mounted; then
         return 0
     fi
@@ -133,7 +166,9 @@ unmount_share() {
 
     if [ "$rc" -eq 0 ]; then
         log_message "Successfully unmounted share"
-        rmdir "$mount_path" 2>/dev/null || true
+        if [ "$AUTH_MODE" != "interactive" ]; then
+            rmdir "$mount_path" 2>/dev/null || true
+        fi
         return 0
     fi
 
@@ -145,7 +180,11 @@ print_status() {
     local current_network mount_path
 
     current_network="$(get_current_network)"
-    mount_path="$(get_mount_path)"
+    if [ "$AUTH_MODE" = "interactive" ]; then
+        mount_path="$(get_interactive_mount_path)"
+    else
+        mount_path="$(get_mount_path)"
+    fi
 
     printf 'Current network: %s\n' "${current_network:-<not connected>}"
     printf 'Target network: %s\n' "$TARGET_NETWORK"

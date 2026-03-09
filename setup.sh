@@ -45,7 +45,10 @@ write_config() {
     local mount_name
     local mount_options="nobrowse,automounted"
 
-    if [ "$show_in_finder" = "true" ]; then
+    if [ "$auth_mode" = "interactive" ]; then
+        show_in_finder="true"
+        mount_options=""
+    elif [ "$show_in_finder" = "true" ]; then
         mount_options="automounted"
     fi
 
@@ -151,6 +154,7 @@ echo "Choose an auth mode:"
 echo "  1. Store credentials in ~/Library/Preferences/nsmb.conf for unattended mounting"
 echo "     This is plain-text storage protected by file permissions, not Keychain."
 echo "  2. Do not store credentials (works only if macOS already has a valid SMB session)"
+echo "  3. Use Finder's normal SMB login prompt when the share needs credentials"
 read -r -p "Selection [1]: " AUTH_SELECTION
 AUTH_SELECTION="${AUTH_SELECTION:-1}"
 
@@ -162,6 +166,9 @@ case "$AUTH_SELECTION" in
     2)
         AUTH_MODE="system"
         ;;
+    3)
+        AUTH_MODE="interactive"
+        ;;
     *)
         echo "Invalid selection: $AUTH_SELECTION"
         exit 1
@@ -169,20 +176,25 @@ case "$AUTH_SELECTION" in
 esac
 
 echo ""
-read -r -p "Show mounted share in Finder? (y/n) [n]: " SHOW_IN_FINDER_PROMPT
 SHOW_IN_FINDER="false"
-case "${SHOW_IN_FINDER_PROMPT:-n}" in
-    y|Y)
-        SHOW_IN_FINDER="true"
-        ;;
-    n|N)
-        SHOW_IN_FINDER="false"
-        ;;
-    *)
-        echo "Invalid selection: ${SHOW_IN_FINDER_PROMPT:-}"
-        exit 1
-        ;;
-esac
+if [ "$AUTH_MODE" = "interactive" ]; then
+    SHOW_IN_FINDER="true"
+    echo "Interactive auth uses Finder's mount flow and will appear in Finder."
+else
+    read -r -p "Show mounted share in Finder? (y/n) [n]: " SHOW_IN_FINDER_PROMPT
+    case "${SHOW_IN_FINDER_PROMPT:-n}" in
+        y|Y)
+            SHOW_IN_FINDER="true"
+            ;;
+        n|N)
+            SHOW_IN_FINDER="false"
+            ;;
+        *)
+            echo "Invalid selection: ${SHOW_IN_FINDER_PROMPT:-}"
+            exit 1
+            ;;
+    esac
+fi
 
 echo ""
 echo "Configuration Summary:"
@@ -230,7 +242,11 @@ echo "Setup complete. The LaunchAgent will now:"
 echo "  - monitor network changes"
 echo "  - mount the share when connected to '$TARGET_NETWORK'"
 echo "  - unmount the share when disconnected"
-echo "  - use mount path: $DEFAULT_MOUNT_ROOT/$(printf '%s' "$SHARE_PATH" | tr '/:' '__')"
+if [ "$AUTH_MODE" = "interactive" ]; then
+    echo "  - use Finder's standard mount flow, usually /Volumes/$SHARE_PATH"
+else
+    echo "  - use mount path: $DEFAULT_MOUNT_ROOT/$(printf '%s' "$SHARE_PATH" | tr '/:' '__')"
+fi
 echo ""
 echo "Useful commands:"
 echo "  - Check status: $SCRIPT_DIR/network_mount_enhanced.sh status"

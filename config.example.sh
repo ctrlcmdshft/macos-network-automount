@@ -13,3 +13,8 @@ MOUNT_ROOT="$HOME/Library/Caches/NetworkAutoMount/mounts"
 MOUNT_NAME='Shared'
 SHOW_IN_FINDER='false'
 MOUNT_OPTIONS='nobrowse,automounted'
+
+# AUTH_MODE can be:
+# - nsmb: unattended mounts using ~/Library/Preferences/nsmb.conf
+# - system: no stored credentials, no prompt
+# - interactive: Finder-managed mount that prompts when needed
